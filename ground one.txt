@@ -1,0 +1,621 @@
+#include <WiFi.h>
+#include <WebServer.h>
+#include <esp_now.h>
+#include <esp_wifi.h>
+
+WebServer server(80);
+String history = "";
+
+// Updated to new MAC address
+uint8_t SAT_MAC[] = {0xEC, 0xE3, 0x34, 0x1A, 0x65, 0x7C};
+
+#define ENC_KEY 0x5A
+
+typedef struct {
+  uint8_t src;
+  uint8_t dst;
+  uint8_t type;
+  char msg[200];
+} Packet;
+
+Packet packet;
+
+void crypt(char *data) {
+  for (int i = 0; i < strlen(data); i++) data[i] ^= ENC_KEY;
+}
+
+const char page[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📡 G1 ESP-NOW Messenger</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #0b1220 0%, #1a1f3c 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(76, 175, 80, 0.3);
+        }
+        
+        .header h1 {
+            color: #4CAF50;
+            font-size: 2.2em;
+            margin-bottom: 8px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            color: #b0b0b0;
+            font-size: 0.9em;
+        }
+        
+        .device-info {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .mac-box {
+            background: rgba(76, 175, 80, 0.15);
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-family: monospace;
+            font-size: 0.9em;
+            color: #81C784;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+        }
+        
+        .chat-container {
+            background: rgba(20, 25, 45, 0.7);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(76, 175, 80, 0.1);
+            backdrop-filter: blur(10px);
+        }
+        
+        .message-input {
+            width: 100%;
+            background: rgba(10, 15, 35, 0.8);
+            border: 2px solid rgba(76, 175, 80, 0.2);
+            border-radius: 12px;
+            padding: 18px;
+            color: white;
+            font-size: 16px;
+            resize: none;
+            min-height: 100px;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .message-input:focus {
+            outline: none;
+            border-color: #4CAF50;
+            box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
+        }
+        
+        .message-input::placeholder {
+            color: #888;
+        }
+        
+        .send-btn {
+            background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+            color: white;
+            border: none;
+            padding: 14px 32px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 25px;
+        }
+        
+        .send-btn:hover {
+            background: linear-gradient(135deg, #388E3C 0%, #2E7D32 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.3);
+        }
+        
+        .send-btn:active {
+            transform: translateY(0);
+        }
+        
+        .history-title {
+            color: #81C784;
+            font-size: 1.2em;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        #history {
+            background: rgba(10, 15, 35, 0.6);
+            border-radius: 10px;
+            padding: 20px;
+            min-height: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .message {
+            padding: 12px 16px;
+            margin-bottom: 12px;
+            border-radius: 12px;
+            animation: fadeIn 0.3s ease;
+            position: relative;
+        }
+        
+        .message.you {
+            background: rgba(76, 175, 80, 0.15);
+            border-left: 4px solid #4CAF50;
+            margin-left: 20px;
+        }
+        
+        .message.g2 {
+            background: rgba(33, 150, 243, 0.15);
+            border-left: 4px solid #2196F3;
+            margin-right: 20px;
+        }
+        
+        .message.system {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #FFC107;
+            text-align: center;
+            font-style: italic;
+            color: #FFD54F;
+        }
+        
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 6px;
+            font-size: 0.85em;
+            opacity: 0.8;
+        }
+        
+        .sender {
+            font-weight: 600;
+        }
+        
+        .you .sender { color: #81C784; }
+        .g2 .sender { color: #64B5F6; }
+        
+        .timestamp {
+            color: #aaa;
+        }
+        
+        .message-content {
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+        
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 20px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(76, 175, 80, 0.9);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            animation: slideIn 0.3s ease;
+            z-index: 1000;
+            display: none;
+        }
+        
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        
+        .clear-btn {
+            background: rgba(244, 67, 54, 0.1);
+            color: #f44336;
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .clear-btn:hover {
+            background: rgba(244, 67, 54, 0.2);
+        }
+        
+        /* Scrollbar styling */
+        #history::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #history::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+        }
+        
+        #history::-webkit-scrollbar-thumb {
+            background: rgba(76, 175, 80, 0.5);
+            border-radius: 4px;
+        }
+        
+        #history::-webkit-scrollbar-thumb:hover {
+            background: rgba(76, 175, 80, 0.7);
+        }
+        
+        .char-counter {
+            text-align: right;
+            font-size: 0.85em;
+            color: #888;
+            margin-top: -15px;
+            margin-bottom: 10px;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .chat-container {
+                padding: 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+            
+            .device-info {
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📡 G1 ESP-NOW Messenger</h1>
+            <p>Device G1 - Sender & Receiver Station</p>
+            <div class="device-info">
+                <div class="mac-box">This Device: 88:57:21:AD:25:9C</div>
+                <div class="mac-box">Target: EC:E3:34:1A:65:7C</div>
+            </div>
+        </div>
+        
+        <div class="chat-container">
+            <div class="status-indicator">
+                <span class="status-dot"></span>
+                <span>Connected to G2 device</span>
+            </div>
+            
+            <textarea 
+                id="messageInput" 
+                class="message-input" 
+                placeholder="Type your message to G2 here... (Max 200 characters)"
+                maxlength="200"
+            ></textarea>
+            
+            <div class="char-counter">
+                <span id="charCount">0</span>/200 characters
+            </div>
+            
+            <button onclick="sendMessage()" class="send-btn">
+                📤 Send to G2
+            </button>
+            
+            <div class="history-title">
+                Message History
+                <button onclick="clearHistory()" class="clear-btn">Clear History</button>
+            </div>
+            
+            <div id="history"></div>
+        </div>
+    </div>
+    
+    <div id="notification" class="notification"></div>
+    
+    <script>
+        let lastHistory = "";
+        
+        function showNotification(text, type = 'info') {
+            const notif = document.getElementById('notification');
+            notif.textContent = text;
+            notif.style.display = 'block';
+            notif.style.background = type === 'success' 
+                ? 'rgba(76, 175, 80, 0.9)' 
+                : type === 'error' 
+                ? 'rgba(244, 67, 54, 0.9)' 
+                : 'rgba(33, 150, 243, 0.9)';
+            
+            setTimeout(() => {
+                notif.style.display = 'none';
+            }, 3000);
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message) {
+                showNotification('Please enter a message', 'info');
+                return;
+            }
+            
+            if (message.length > 200) {
+                showNotification('Message too long (max 200 chars)', 'error');
+                return;
+            }
+            
+            fetch('/send?m=' + encodeURIComponent(message))
+                .then(response => {
+                    if (response.ok) {
+                        input.value = '';
+                        updateCharCount();
+                        input.focus();
+                        showNotification('Message sent to G2', 'success');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    showNotification('Failed to send message', 'error');
+                });
+        }
+        
+        function clearHistory() {
+            if (confirm('Clear all message history?')) {
+                fetch('/clear')
+                    .then(() => {
+                        document.getElementById('history').innerHTML = '';
+                        showNotification('History cleared', 'success');
+                    });
+            }
+        }
+        
+        function updateCharCount() {
+            const input = document.getElementById('messageInput');
+            const count = input.value.length;
+            document.getElementById('charCount').textContent = count;
+            
+            // Change color if approaching limit
+            const charCounter = document.getElementById('charCount');
+            if (count > 180) {
+                charCounter.style.color = '#ff9800';
+            } else if (count > 190) {
+                charCounter.style.color = '#f44336';
+            } else {
+                charCounter.style.color = '#4CAF50';
+            }
+        }
+        
+        function updateHistory() {
+            fetch('/hist')
+                .then(response => response.text())
+                .then(data => {
+                    if (data !== lastHistory) {
+                        document.getElementById('history').innerHTML = data;
+                        const historyDiv = document.getElementById('history');
+                        historyDiv.scrollTop = historyDiv.scrollHeight;
+                        lastHistory = data;
+                    }
+                })
+                .catch(error => console.error('Error fetching history:', error));
+        }
+        
+        // Send message on Enter (Ctrl+Enter for new line)
+        document.getElementById('messageInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        // Update character count
+        document.getElementById('messageInput').addEventListener('input', updateCharCount);
+        
+        // Auto-focus input on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('messageInput').focus();
+            updateCharCount();
+        });
+        
+        // Update history every second
+        setInterval(updateHistory, 1000);
+        
+        // Initial update
+        updateHistory();
+    </script>
+</body>
+</html>
+)rawliteral";
+
+void onReceive(const esp_now_recv_info *info, const uint8_t *data, int len) {
+  Packet p; 
+  memcpy(&p, data, sizeof(p));
+  
+  if(p.type == 0) { // Message from G2
+    crypt(p.msg);
+    
+    // Get current time
+    char timestamp[20];
+    unsigned long millisTime = millis();
+    int hours = (millisTime / 3600000) % 24;
+    int minutes = (millisTime / 60000) % 60;
+    int seconds = (millisTime / 1000) % 60;
+    sprintf(timestamp, "%02d:%02d:%02d", hours, minutes, seconds);
+    
+    // Add to history with timestamp
+    String msgHTML = "<div class='message g2'>";
+    msgHTML += "<div class='message-header'>";
+    msgHTML += "<span class='sender'>G2</span>";
+    msgHTML += "<span class='timestamp'>" + String(timestamp) + "</span>";
+    msgHTML += "</div>";
+    msgHTML += "<div class='message-content'>" + String(p.msg) + "</div>";
+    msgHTML += "</div>";
+    
+    history = msgHTML + history; // Add to beginning
+    
+    // Send acknowledgment back
+    Packet ack = {1, 2, 1, "DELIVERED"};
+    esp_now_send(SAT_MAC, (uint8_t*)&ack, sizeof(ack));
+    
+  } else if (p.type == 1) { // Delivery acknowledgment
+    // Update last message with delivery status
+    String deliveredHTML = "<div class='message system'>";
+    deliveredHTML += "✓ Message delivered to G2";
+    deliveredHTML += "</div>";
+    
+    history = deliveredHTML + history;
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Set up WiFi
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP("G1_NET", "12345678");
+  esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
+  
+  // Initialize ESP-NOW
+  if (esp_now_init() != ESP_OK) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+  
+  esp_now_register_recv_cb(onReceive);
+  
+  // Register peer
+  esp_now_peer_info_t peer = {};
+  memcpy(peer.peer_addr, SAT_MAC, 6);
+  peer.channel = 1;
+  peer.encrypt = false;
+  
+  if (esp_now_add_peer(&peer) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
+  
+  // Set up web server routes
+  server.on("/", []() {
+    server.send_P(200, "text/html", page);
+  });
+  
+  server.on("/send", []() {
+    if (server.hasArg("m")) {
+      packet = {1, 2, 0, ""};
+      server.arg("m").toCharArray(packet.msg, 200);
+      
+      // Add timestamp for outgoing message
+      unsigned long millisTime = millis();
+      int hours = (millisTime / 3600000) % 24;
+      int minutes = (millisTime / 60000) % 60;
+      int seconds = (millisTime / 1000) % 60;
+      char timestamp[20];
+      sprintf(timestamp, "%02d:%02d:%02d", hours, minutes, seconds);
+      
+      String msgHTML = "<div class='message you'>";
+      msgHTML += "<div class='message-header'>";
+      msgHTML += "<span class='sender'>You (G1)</span>";
+      msgHTML += "<span class='timestamp'>" + String(timestamp) + "</span>";
+      msgHTML += "</div>";
+      msgHTML += "<div class='message-content'>" + server.arg("m") + "</div>";
+      msgHTML += "</div>";
+      
+      history = msgHTML + history;
+      
+      // Encrypt and send
+      crypt(packet.msg);
+      esp_now_send(SAT_MAC, (uint8_t*)&packet, sizeof(packet));
+    }
+    server.send(200, "text/plain", "OK");
+  });
+  
+  server.on("/hist", []() {
+    server.send(200, "text/html", history);
+  });
+  
+  server.on("/clear", []() {
+    history = "";
+    server.send(200, "text/plain", "Cleared");
+  });
+  
+  server.begin();
+  
+  Serial.println("G1 ESP-NOW Messenger started");
+  Serial.print("AP SSID: ");
+  Serial.println("G1_NET");
+  Serial.print("AP IP address: ");
+  Serial.println(WiFi.softAPIP());
+  Serial.print("Target MAC (G2): ");
+  for (int i = 0; i < 6; i++) {
+    Serial.print(SAT_MAC[i], HEX);
+    if (i < 5) Serial.print(":");
+  }
+  Serial.println();
+  Serial.println("Ready to communicate with G2...");
+}
+
+void loop() { 
+  server.handleClient(); 
+}

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Satellite Control Center</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <!-- HEADER -->
+        <header class="dashboard-header">
+            <div class="header-left">
+                <h1><i class="fas fa-satellite"></i> SATELLITE CONTROL CENTER</h1>
+                <div class="status-bar">
+                    <div class="status-item">
+                        <span class="status-label">Connection:</span>
+                        <span id="connection-status" class="connected">
+                            <i class="fas fa-circle"></i> ACTIVE
+                        </span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Uptime:</span>
+                        <span id="uptime">00:00:00</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Data Rate:</span>
+                        <span>1 Hz</span>
+                    </div>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="connection-info">
+                    <i class="fas fa-wifi"></i>
+                    <span>SATELLITE_DASH</span>
+                    <div class="signal">
+                        <div class="signal-bar active"></div>
+                        <div class="signal-bar active"></div>
+                        <div class="signal-bar active"></div>
+                        <div class="signal-bar"></div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <!-- LEFT COLUMN: 3D VISUALIZATION & ENGINE CONTROL -->
+            <div class="left-column">
+                <!-- 3D SATELLITE VIEW -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-cube"></i> 3D SATELLITE MODEL</h3>
+                        <div class="view-controls">
+                            <button class="btn-small" onclick="changeView('top')">
+                                <i class="fas fa-eye"></i> Top
+                            </button>
+                            <button class="btn-small" onclick="changeView('front')">
+                                <i class="fas fa-arrows-alt-h"></i> Front
+                            </button>
+                            <button class="btn-small" onclick="changeView('side')">
+                                <i class="fas fa-arrows-alt-v"></i> Side
+                            </button>
+                            <button class="btn-small" onclick="resetView()">
+                                <i class="fas fa-sync-alt"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                    <div id="satellite-container">
+                        <!-- 3D Satellite will render here -->
+                    </div>
+                    <div class="orientation-info">
+                        <div class="orientation-item">
+                            <span>Roll:</span>
+                            <div class="orientation-value" id="roll">0.0°</div>
+                        </div>
+                        <div class="orientation-item">
+                            <span>Pitch:</span>
+                            <div class="orientation-value" id="pitch">0.0°</div>
+                        </div>
+                        <div class="orientation-item">
+                            <span>Yaw:</span>
+                            <div class="orientation-value" id="yaw">0.0°</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ENGINE CONTROL PANEL -->
+                <div class="panel engine-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-fire"></i> THRUSTER CONTROL</h3>
+                        <div class="engine-mode">
+                            <button class="btn-small active" onclick="setAutoMode()">Auto</button>
+                            <button class="btn-small" onclick="setManualMode()">Manual</button>
+                        </div>
+                    </div>
+                    
+                    <!-- 8 ENGINE GRID -->
+                    <div class="engine-grid">
+                        <!-- Row 1: X-axis Engines -->
+                        <div class="engine-row">
+                            <div class="engine-control" data-engine="1">
+                                <div class="engine-label">+X (Front)</div>
+                                <!-- Thrust Slider -->
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(1, this.value)">
+                                    <div class="slider-value" id="engine-1-value">0%</div>
+                                </div>
+                                <!-- Quick Buttons -->
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(1, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(1)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-1-status">OFF</div>
+                            </div>
+                            
+                            <div class="engine-control" data-engine="2">
+                                <div class="engine-label">-X (Rear)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(2, this.value)">
+                                    <div class="slider-value" id="engine-2-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(2, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(2)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-2-status">OFF</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Row 2: Y-axis Engines -->
+                        <div class="engine-row">
+                            <div class="engine-control" data-engine="3">
+                                <div class="engine-label">+Y (Right)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(3, this.value)">
+                                    <div class="slider-value" id="engine-3-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(3, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(3)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-3-status">OFF</div>
+                            </div>
+                            
+                            <div class="engine-control" data-engine="4">
+                                <div class="engine-label">-Y (Left)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(4, this.value)">
+                                    <div class="slider-value" id="engine-4-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(4, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(4)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-4-status">OFF</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Row 3: Z-axis Engines -->
+                        <div class="engine-row">
+                            <div class="engine-control" data-engine="5">
+                                <div class="engine-label">+Z (Top)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(5, this.value)">
+                                    <div class="slider-value" id="engine-5-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(5, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(5)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-5-status">OFF</div>
+                            </div>
+                            
+                            <div class="engine-control" data-engine="6">
+                                <div class="engine-label">-Z (Bottom)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(6, this.value)">
+                                    <div class="slider-value" id="engine-6-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(6, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(6)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-6-status">OFF</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Row 4: Diagonal Engines -->
+                        <div class="engine-row">
+                            <div class="engine-control" data-engine="7">
+                                <div class="engine-label">+X+Y (FR Corner)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(7, this.value)">
+                                    <div class="slider-value" id="engine-7-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(7, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(7)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-7-status">OFF</div>
+                            </div>
+                            
+                            <div class="engine-control" data-engine="8">
+                                <div class="engine-label">-X-Y (BL Corner)</div>
+                                <div class="slider-container">
+                                    <input type="range" min="0" max="100" value="0" 
+                                           oninput="manualThrust(8, this.value)">
+                                    <div class="slider-value" id="engine-8-value">0%</div>
+                                </div>
+                                <div class="test-controls">
+                                    <button class="test-btn" onclick="manualThrust(8, 30)">30%</button>
+                                    <button class="test-btn fire" onclick="fireEngine(8)">FIRE!</button>
+                                </div>
+                                <div class="engine-status" id="engine-8-status">OFF</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="engine-controls">
+                        <button class="btn-engine" onclick="stabilizeSatellite()">
+                            <i class="fas fa-compress-arrows-alt"></i> Stabilize
+                        </button>
+                        <button class="btn-engine" onclick="rotateX()">
+                            <i class="fas fa-redo"></i> Rotate X
+                        </button>
+                        <button class="btn-engine" onclick="rotateY()">
+                            <i class="fas fa-redo"></i> Rotate Y
+                        </button>
+                        <button class="btn-engine" onclick="rotateZ()">
+                            <i class="fas fa-redo"></i> Rotate Z
+                        </button>
+                        <button class="btn-engine btn-danger" onclick="emergencyStop()">
+                            <i class="fas fa-stop-circle"></i> EMERGENCY STOP
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT COLUMN: SENSOR DATA & GRAPHS -->
+            <div class="right-column">
+                <!-- REAL-TIME SENSOR DATA -->
+                <div class="panel sensor-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-microchip"></i> REAL-TIME TELEMETRY</h3>
+                        <div class="refresh-rate">
+                            <span>Refresh: </span>
+                            <select id="refresh-select" onchange="changeRefreshRate(this.value)">
+                                <option value="200">200ms</option>
+                                <option value="500" selected>500ms</option>
+                                <option value="1000">1s</option>
+                                <option value="2000">2s</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="sensor-grid">
+                        <!-- Accelerometer -->
+                        <div class="sensor-card accel-card">
+                            <div class="sensor-header">
+                                <h4><i class="fas fa-compass"></i> ACCELEROMETER</h4>
+                                <div class="sensor-unit">m/s²</div>
+                            </div>
+                            <div class="sensor-values">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">X:</span>
+                                    <span class="sensor-value" id="ax-value">0</span>
+                                    <div class="sensor-gauge">
+                                        <div class="gauge-fill" id="ax-gauge"></div>
+                                    </div>
+                                </div>
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Y:</span>
+                                    <span class="sensor-value" id="ay-value">0</span>
+                                    <div class="sensor-gauge">
+                                        <div class="gauge-fill" id="ay-gauge"></div>
+                                    </div>
+                                </div>
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Z:</span>
+                                    <span class="sensor-value" id="az-value">0</span>
+                                    <div class="sensor-gauge">
+                                        <div class="gauge-fill" id="az-gauge"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Gyroscope -->
+                        <div class="sensor-card gyro-card">
+                            <div class="sensor-header">
+                                <h4><i class="fas fa-sync-alt"></i> GYROSCOPE</h4>
+                                <div class="sensor-unit">°/s</div>
+                            </div>
+                            <div class="sensor-values">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">X:</span>
+                                    <span class="sensor-value" id="gx-value">0</span>
+                                    <div class="sensor-gauge">
+                                        <div class="gauge-fill" id="gx-gauge"></div>
+                                    </div>
+                                </div>
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Y:</span>
+                                    <span class="sensor-value" id="gy-value">0</span>
+                                    <div class="sensor-gauge">
+                                        <div class="gauge-fill" id="gy-gauge"></div>
+                                    </div>
+                                </div>
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Z:</span>
+                                    <span class="sensor-value" id="gz-value">0</span>
+                                    <div class="sensor-gauge">
+                                        <div class="gauge-fill" id="gz-gauge"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Environment -->
+                        <div class="sensor-card env-card">
+                            <div class="sensor-header">
+                                <h4><i class="fas fa-thermometer-half"></i> ENVIRONMENT</h4>
+                                <div class="sensor-unit">°C / hPa</div>
+                            </div>
+                            <div class="sensor-values">
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Temp:</span>
+                                    <span class="sensor-value" id="temp-value">0.0</span>
+                                    <span class="sensor-unit-small">°C</span>
+                                    <div class="sensor-trend" id="temp-trend">
+                                        <i class="fas fa-minus"></i>
+                                    </div>
+                                </div>
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Pressure:</span>
+                                    <span class="sensor-value" id="pressure-value">0.0</span>
+                                    <span class="sensor-unit-small">hPa</span>
+                                    <div class="sensor-trend" id="pressure-trend">
+                                        <i class="fas fa-minus"></i>
+                                    </div>
+                                </div>
+                                <div class="sensor-item">
+                                    <span class="sensor-label">Air Quality:</span>
+                                    <span class="sensor-value" id="mq135-value">0</span>
+                                    <span class="sensor-unit-small">PPM</span>
+                                    <div class="quality-indicator" id="quality-indicator"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GRAPHS SECTION -->
+                <div class="panel graph-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-chart-line"></i> TELEMETRY HISTORY</h3>
+                        <div class="graph-controls">
+                            <button class="btn-small" onclick="showGraph('temp')">Temp</button>
+                            <button class="btn-small" onclick="showGraph('pressure')">Pressure</button>
+                            <button class="btn-small" onclick="showGraph('gas')">Gas</button>
+                            <button class="btn-small" onclick="clearGraphs()">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="graphs-container">
+                        <div class="graph-card">
+                            <div class="graph-header">
+                                <h4><i class="fas fa-temperature-high"></i> TEMPERATURE</h4>
+                                <div class="graph-stats">
+                                    <span>Max: <span id="temp-max">0.0</span>°C</span>
+                                    <span>Min: <span id="temp-min">0.0</span>°C</span>
+                                    <span>Avg: <span id="temp-avg">0.0</span>°C</span>
+                                </div>
+                            </div>
+                            <canvas id="temp-chart"></canvas>
+                        </div>
+                        
+                        <div class="graph-card">
+                            <div class="graph-header">
+                                <h4><i class="fas fa-tachometer-alt"></i> PRESSURE</h4>
+                                <div class="graph-stats">
+                                    <span>Max: <span id="pressure-max">0.0</span>hPa</span>
+                                    <span>Min: <span id="pressure-min">0.0</span>hPa</span>
+                                    <span>Avg: <span id="pressure-avg">0.0</span>hPa</span>
+                                </div>
+                            </div>
+                            <canvas id="pressure-chart"></canvas>
+                        </div>
+                        
+                        <div class="graph-card">
+                            <div class="graph-header">
+                                <h4><i class="fas fa-wind"></i> AIR QUALITY</h4>
+                                <div class="graph-stats">
+                                    <span>Max: <span id="gas-max">0</span>PPM</span>
+                                    <span>Min: <span id="gas-min">0</span>PPM</span>
+                                    <span>Avg: <span id="gas-avg">0</span>PPM</span>
+                                </div>
+                            </div>
+                            <canvas id="gas-chart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SYSTEM STATUS -->
+                <div class="panel system-panel">
+                    <div class="panel-header">
+                        <h3><i class="fas fa-heartbeat"></i> SYSTEM STATUS</h3>
+                        <div class="system-actions">
+                            <button class="btn-small" onclick="startDataStream()">
+                                <i class="fas fa-play"></i> Start
+                            </button>
+                            <button class="btn-small" onclick="stopDataStream()">
+                                <i class="fas fa-pause"></i> Pause
+                            </button>
+                            <button class="btn-small" onclick="exportData()">
+                                <i class="fas fa-download"></i> Export
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="system-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Packets Received</div>
+                            <div class="stat-value" id="packet-count">0</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Data Rate</div>
+                            <div class="stat-value">1 <span class="stat-unit">Hz</span></div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Memory Usage</div>
+                            <div class="stat-value">42 <span class="stat-unit">%</span></div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Signal Strength</div>
+                            <div class="stat-value">-48 <span class="stat-unit">dBm</span></div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Last Update</div>
+                            <div class="stat-value" id="last-update-time">--:--:--</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Errors</div>
+                            <div class="stat-value error">0</div>
+                        </div>
+                    </div>
+                    
+                    <div class="log-container">
+                        <div class="log-header">
+                            <h4><i class="fas fa-terminal"></i> EVENT LOG</h4>
+                            <button class="btn-small" onclick="clearLog()">Clear</button>
+                        </div>
+                        <div class="log-content" id="event-log">
+                            <div class="log-entry">[00:00:00] Dashboard initialized</div>
+                            <div class="log-entry">[00:00:00] 3D visualization loaded</div>
+                            <div class="log-entry">[00:00:00] Charts initialized</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- FOOTER -->
+        <footer class="dashboard-footer">
+            <div class="footer-left">
+                <p>
+                    <i class="fas fa-code"></i> Satellite Control System v2.0 |
+                    <i class="fas fa-satellite"></i> ESP-NOW + Three.js |
+                    <i class="fas fa-clock"></i> Real-time Dashboard
+                </p> 
+            </div>
+            <div class="footer-right">
+                <div class="timestamp">
+                    <i class="fas fa-sync-alt"></i>
+                    <span id="current-time">00:00:00</span>
+                    <span class="timezone">UTC</span>
+                </div>
+                <button class="btn-footer" onclick="fullScreen()">
+                    <i class="fas fa-expand"></i> Fullscreen
+                </button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- NOTIFICATION CONTAINER -->
+    <div id="notification-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>

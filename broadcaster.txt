@@ -1,0 +1,76 @@
+#include <ESP8266WiFi.h>
+
+extern "C" {
+  #include <espnow.h>
+}
+
+// Broadcast MAC Address
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
+// Message structure
+typedef struct {
+  int sender_id;
+  int msg_no;
+  int total_msgs;
+  unsigned long timestamp;
+} message_t;
+
+message_t data;
+int senderID = 1;  // Change this for each sender (1, 2, 3, etc.)
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("\nESP-NOW Broadcast Sender");
+  
+  // Set WiFi mode
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+  
+  // Initialize ESP-NOW
+  if (esp_now_init() != 0) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+  
+  // Set ESP-NOW role
+  esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
+  
+  // Add broadcast peer
+  esp_now_add_peer(broadcastAddress, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+  
+  Serial.println("Sender Initialized. Sending broadcasts...");
+}
+
+void loop() {
+  // Generate random number of messages (5-10)
+  int totalMessages = random(5, 11);
+  
+  Serial.print("\nSending ");
+  Serial.print(totalMessages);
+  Serial.println(" messages:");
+  
+  for (int i = 1; i <= totalMessages; i++) {
+    // Prepare data
+    data.sender_id = senderID;
+    data.msg_no = i;
+    data.total_msgs = totalMessages;
+    data.timestamp = millis();
+    
+    // Send message
+    esp_now_send(broadcastAddress, (uint8_t *)&data, sizeof(data));
+    
+    // Print to Serial
+    Serial.print("Sent: Sender ");
+    Serial.print(senderID);
+    Serial.print(", Message ");
+    Serial.print(i);
+    Serial.print("/");
+    Serial.print(totalMessages);
+    Serial.print(", Time: ");
+    Serial.println(data.timestamp);
+    
+    delay(200);  // Delay between messages
+  }
+  
+  delay(4000);  // Wait 4 seconds before next batch
+}

@@ -1,0 +1,355 @@
+#include <ESP8266WiFi.h>
+#include <espnow.h>
+#include <ESP8266WebServer.h>
+
+// WiFi Hotspot settings
+const char* ssid = "SATELLITE_DASH";
+const char* password = "12345678";
+
+// Data structure (MUST match transmitter!)
+typedef struct {
+  int16_t ax, ay, az;
+  int16_t gx, gy, gz;
+  float pressure;
+  float bmpTemp;
+  int mq135;
+} Telemetry;
+
+Telemetry rx;
+ESP8266WebServer server(80);
+unsigned long lastDataTime = 0;
+
+// Dashboard HTML
+const char* dashboardHTML = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Satellite Dashboard</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            background: linear-gradient(135deg, #0c0f1d 0%, #1a1f3a 100%);
+            color: #e0e0ff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: rgba(16, 20, 40, 0.9);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(0, 247, 255, 0.2);
+        }
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        @media (max-width: 768px) {
+            .sensor-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        @media (max-width: 480px) {
+            .sensor-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        .sensor-card {
+            background: rgba(16, 20, 40, 0.8);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(0, 247, 255, 0.1);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        .sensor-card h3 {
+            color: #00f7ff;
+            margin-top: 0;
+            border-bottom: 1px solid rgba(0, 247, 255, 0.2);
+            padding-bottom: 10px;
+        }
+        .sensor-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #fff;
+            margin: 10px 0;
+        }
+        .sensor-unit {
+            color: #888;
+            font-size: 1rem;
+        }
+        .status {
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .connected {
+            background: rgba(0, 255, 157, 0.2);
+            color: #00ff9d;
+            border: 1px solid rgba(0, 255, 157, 0.5);
+        }
+        .disconnected {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+            border: 1px solid rgba(255, 107, 107, 0.5);
+        }
+        .gauge {
+            height: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 5px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        .gauge-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00f7ff, #0080ff);
+            border-radius: 5px;
+            width: 50%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛰 Satellite Telemetry Dashboard</h1>
+            <div id="connection-status" class="status disconnected">🔴 DISCONNECTED</div>
+            <p>IP: <strong id="ip-address">192.168.4.1</strong> | Last Update: <span id="last-update">Never</span></p>
+        </div>
+        
+        <div class="sensor-grid">
+            <div class="sensor-card">
+                <h3>📊 Acceleration</h3>
+                <div>X: <span class="sensor-value" id="ax">0</span> <span class="sensor-unit">m/s²</span></div>
+                <div class="gauge"><div class="gauge-fill" id="ax-gauge"></div></div>
+                <div>Y: <span class="sensor-value" id="ay">0</span> <span class="sensor-unit">m/s²</span></div>
+                <div class="gauge"><div class="gauge-fill" id="ay-gauge"></div></div>
+                <div>Z: <span class="sensor-value" id="az">0</span> <span class="sensor-unit">m/s²</span></div>
+                <div class="gauge"><div class="gauge-fill" id="az-gauge"></div></div>
+            </div>
+            
+            <div class="sensor-card">
+                <h3>🔄 Gyroscope</h3>
+                <div>X: <span class="sensor-value" id="gx">0</span> <span class="sensor-unit">°/s</span></div>
+                <div class="gauge"><div class="gauge-fill" id="gx-gauge"></div></div>
+                <div>Y: <span class="sensor-value" id="gy">0</span> <span class="sensor-unit">°/s</span></div>
+                <div class="gauge"><div class="gauge-fill" id="gy-gauge"></div></div>
+                <div>Z: <span class="sensor-value" id="gz">0</span> <span class="sensor-unit">°/s</span></div>
+                <div class="gauge"><div class="gauge-fill" id="gz-gauge"></div></div>
+            </div>
+            
+            <div class="sensor-card">
+                <h3>🌡️ Environment</h3>
+                <div>Temperature: <span class="sensor-value" id="temp">0</span> <span class="sensor-unit">°C</span></div>
+                <div class="gauge"><div class="gauge-fill" id="temp-gauge"></div></div>
+                <div>Pressure: <span class="sensor-value" id="pressure">0</span> <span class="sensor-unit">hPa</span></div>
+                <div class="gauge"><div class="gauge-fill" id="pressure-gauge"></div></div>
+                <div>Air Quality: <span class="sensor-value" id="mq135">0</span> <span class="sensor-unit">PPM</span></div>
+                <div class="gauge"><div class="gauge-fill" id="mq-gauge"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function updateDashboard() {
+            fetch('/data')
+                .then(response => response.json())
+                .then(data => {
+                    // Update connection status
+                    const statusEl = document.getElementById('connection-status');
+                    const timeDiff = Date.now() - (data.timestamp || 0);
+                    
+                    if (timeDiff < 3000) {
+                        statusEl.textContent = '🟢 CONNECTED';
+                        statusEl.className = 'status connected';
+                        
+                        // Update last update time
+                        const now = new Date();
+                        document.getElementById('last-update').textContent = 
+                            now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+                    } else {
+                        statusEl.textContent = '🔴 DISCONNECTED';
+                        statusEl.className = 'status disconnected';
+                    }
+                    
+                    // Update sensor values
+                    document.getElementById('ax').textContent = data.ax;
+                    document.getElementById('ay').textContent = data.ay;
+                    document.getElementById('az').textContent = data.az;
+                    document.getElementById('gx').textContent = data.gx;
+                    document.getElementById('gy').textContent = data.gy;
+                    document.getElementById('gz').textContent = data.gz;
+                    document.getElementById('temp').textContent = data.bmpTemp.toFixed(1);
+                    document.getElementById('pressure').textContent = data.pressure.toFixed(1);
+                    document.getElementById('mq135').textContent = data.mq135;
+                    
+                    // Update gauges
+                    updateGauge('ax-gauge', Math.abs(data.ax), 16384);
+                    updateGauge('ay-gauge', Math.abs(data.ay), 16384);
+                    updateGauge('az-gauge', Math.abs(data.az), 16384);
+                    updateGauge('gx-gauge', Math.abs(data.gx), 2000);
+                    updateGauge('gy-gauge', Math.abs(data.gy), 2000);
+                    updateGauge('gz-gauge', Math.abs(data.gz), 2000);
+                    updateGauge('temp-gauge', data.bmpTemp, 50);
+                    updateGauge('pressure-gauge', data.pressure, 1100);
+                    updateGauge('mq-gauge', data.mq135, 1024);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('connection-status').textContent = '🔴 ERROR';
+                    document.getElementById('connection-status').className = 'status disconnected';
+                });
+        }
+        
+        function updateGauge(id, value, max) {
+            const gauge = document.getElementById(id);
+            if (gauge) {
+                const percentage = Math.min(Math.abs(value) / max * 100, 100);
+                gauge.style.width = percentage + '%';
+                
+                // Color based on value
+                if (percentage > 80) {
+                    gauge.style.background = 'linear-gradient(90deg, #ff6b6b, #ff8e53)';
+                } else if (percentage > 50) {
+                    gauge.style.background = 'linear-gradient(90deg, #ffc107, #ff8e53)';
+                } else {
+                    gauge.style.background = 'linear-gradient(90deg, #00f7ff, #0080ff)';
+                }
+            }
+        }
+        
+        // Update every 200ms
+        setInterval(updateDashboard, 200);
+        
+        // Initial update
+        updateDashboard();
+        
+        // Update IP address display
+        document.getElementById('ip-address').textContent = window.location.hostname;
+    </script>
+</body>
+</html>
+)rawliteral";
+
+// ESP-NOW callback
+void onDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len) {
+  if (len == sizeof(Telemetry)) {
+    memcpy(&rx, incomingData, sizeof(rx));
+    lastDataTime = millis();
+    
+    // Print to Serial Monitor
+    Serial.print("📥 Received: AX=");
+    Serial.print(rx.ax);
+    Serial.print(", Temp=");
+    Serial.print(rx.bmpTemp, 1);
+    Serial.print("°C, MQ=");
+    Serial.println(rx.mq135);
+  }
+}
+
+// HTTP handlers
+void handleRoot() {
+  server.send_P(200, "text/html", dashboardHTML);
+}
+
+void handleData() {
+  String json = "{";
+  json += "\"ax\":" + String(rx.ax) + ",";
+  json += "\"ay\":" + String(rx.ay) + ",";
+  json += "\"az\":" + String(rx.az) + ",";
+  json += "\"gx\":" + String(rx.gx) + ",";
+  json += "\"gy\":" + String(rx.gy) + ",";
+  json += "\"gz\":" + String(rx.gz) + ",";
+  json += "\"bmpTemp\":" + String(rx.bmpTemp) + ",";
+  json += "\"pressure\":" + String(rx.pressure) + ",";
+  json += "\"mq135\":" + String(rx.mq135) + ",";
+  json += "\"timestamp\":" + String(millis());
+  json += "}";
+  
+  // Add CORS headers
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.send(200, "application/json", json);
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  
+  Serial.println("\n=== SATELLITE RECEIVER ===");
+  
+  // Setup WiFi hotspot
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAP(ssid, password);
+  
+  // Configure AP IP
+  IPAddress apIP(192, 168, 4, 1);
+  IPAddress gateway(192, 168, 4, 1);
+  IPAddress subnet(255, 255, 255, 0);
+  WiFi.softAPConfig(apIP, gateway, subnet);
+  
+  Serial.println("📡 WiFi Hotspot Created:");
+  Serial.print("   SSID: "); Serial.println(ssid);
+  Serial.print("   Password: "); Serial.println(password);
+  Serial.print("   IP Address: "); Serial.println(WiFi.softAPIP());
+  
+  // Print MAC address
+  Serial.print("📱 Receiver MAC: ");
+  Serial.println(WiFi.macAddress());
+  
+  // Setup ESP-NOW
+  if (esp_now_init() != 0) {
+    Serial.println("❌ ESP-NOW init failed!");
+    delay(1000);
+    ESP.restart();
+  }
+  
+  // Set WiFi channel to match transmitter
+  wifi_set_channel(6);
+  
+  esp_now_set_self_role(ESP_NOW_ROLE_SLAVE);
+  esp_now_register_recv_cb(onDataRecv);
+  
+  Serial.println("✅ ESP-NOW ready (waiting for data...)");
+  
+  // Setup web server
+  server.on("/", handleRoot);
+  server.on("/data", handleData);
+  
+  server.begin();
+  Serial.println("✅ Web server started");
+  
+  Serial.println("\n🔗 HOW TO CONNECT:");
+  Serial.println("   1. Connect laptop to WiFi: SATELLITE_DASH");
+  Serial.println("   2. Password: 12345678");
+  Serial.println("   3. Open browser to: http://192.168.4.1");
+  Serial.println("========================================\n");
+}
+
+void loop() {
+  server.handleClient();
+  
+  // Print status every 5 seconds
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 5000) {
+    lastPrint = millis();
+    
+    if (millis() - lastDataTime > 5000) {
+      Serial.println("⚠️  Waiting for transmitter data...");
+    } else {
+      Serial.print("✅ Receiving data (");
+      Serial.print((millis() - lastDataTime) / 1000);
+      Serial.println(" seconds ago)");
+    }
+  }
+  
+  delay(10);
+}
