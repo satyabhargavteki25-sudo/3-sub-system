@@ -344,7 +344,8 @@ MIT License
 
 # 📬 Contact
 
-Project Lead: TEKI SATYA BHARGAV  
+Project Lead: TEKI SATYA BHARGAV 
+Team members: TEDLA BHAVYA SRI
 Institution: VIGNAN UNIVERSITY  
 
 GitHub:
